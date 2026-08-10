@@ -504,7 +504,7 @@ TEXTS: dict[str, dict[str, str]] = {
             "🧾 النوع: {type}\n"
             "💰 المبلغ/العرض: <b>{amount} دج</b>\n"
             "🕒 التاريخ: {date}\n"
-            "🔖 مرجع OneClick: <code>{reference}</code>\n"
+
             "📊 الحالة: {status}"
         ),
         "en": (

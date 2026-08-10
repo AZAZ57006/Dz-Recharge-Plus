@@ -28,7 +28,8 @@ from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from config import Config
 from database import Database
@@ -279,7 +280,7 @@ async def cmd_start(message: Message, db: Database, config: Config) -> None:
         username=user.username,
         full_name=user.full_name or user.first_name or "User",
     )
-    if db_user.get("is_banned"):
+    if db_user.get("is_banned") and not _is_admin(user.id, config):
         await message.answer(get_text("banned", db_user["language"]))
         return
     lang = db_user["language"]
@@ -318,18 +319,37 @@ async def cmd_help(message: Message, db: Database, config: Config) -> None:
 # /balance
 # ---------------------------------------------------------------------------
 
+@router.message(Command("myid"))
+async def cmd_myid(message: Message) -> None:
+    await message.answer(
+        f"🆔 Telegram ID الخاص بك:\n<code>{message.from_user.id}</code>"
+    )
+
+
 @router.message(Command("balance"))
-async def cmd_balance(message: Message, db: Database, config: Config) -> None:
+async def cmd_balance(
+    message: Message,
+    db: Database,
+    config: Config,
+    api: OneClickAPI,
+) -> None:
     user = message.from_user
     if not user:
         return
+
     lang = await _lang(db, user.id)
+
+    # محفظة المستخدم الداخلية في bot.db
     balance = await db.get_balance(user.id)
+
     await message.answer(
-        get_text("wallet_title", lang, balance=format_amount(balance)),
+        get_text(
+            "wallet_title",
+            lang,
+            balance=format_amount(balance),
+        ),
         reply_markup=wallet_keyboard(lang),
     )
-
 
 # ---------------------------------------------------------------------------
 # /history
@@ -458,7 +478,7 @@ async def handle_text(
         username=user.username,
         full_name=user.full_name or user.first_name or "User",
     )
-    if db_user.get("is_banned"):
+    if db_user.get("is_banned") and not _is_admin(user.id, config):
         await message.answer(get_text("banned", db_user["language"]))
         return
 
@@ -471,7 +491,7 @@ async def handle_text(
     # parsing since they're plain text but must not be treated as a phone
     # number or fall through to "unknown command".
     if text in (get_text("btn_balance", "ar"), get_text("btn_balance", "en")):
-        await cmd_balance(message, db, config)
+        await cmd_balance(message, db, config, api)
         return
     if text in (get_text("btn_history", "ar"), get_text("btn_history", "en")):
         await cmd_history(message, db, config, state)
@@ -1939,18 +1959,70 @@ async def admin_callback(
 
     elif action == "users":
         users = await db.get_all_users()
+
         if not users:
-            text = get_text("admin_users_empty", lang)
+            await query.message.edit_text(
+                get_text("admin_users_empty", lang),
+                reply_markup=admin_keyboard(lang, config.MOCK_MODE),
+            )
         else:
+            text = get_text("admin_users_title", lang)
+            b = InlineKeyboardBuilder()
             unknown = get_text("admin_users_unknown", lang)
-            lines   = [get_text("admin_users_title", lang)]
+
             for u in users[:20]:
-                name   = u["full_name"] or unknown
-                bal    = format_amount(u["balance"])
+                name = u["full_name"] or unknown
                 banned = " 🚫" if u["is_banned"] else ""
-                lines.append(f"• <b>{name}</b>{banned} | <code>{u['telegram_id']}</code> | {bal}")
-            text = "\n".join(lines)
-        await query.message.edit_text(text, reply_markup=admin_keyboard(lang, config.MOCK_MODE))
+                label = f"{name}{banned} · {u['telegram_id']}"
+
+                b.row(
+                    InlineKeyboardButton(
+                        text=label,
+                        callback_data=AdminCallback(
+                            action="user_detail",
+                            target_id=u["telegram_id"],
+                        ).pack(),
+                    )
+                )
+
+            b.row(
+                InlineKeyboardButton(
+                    text=get_text("btn_back", lang),
+                    callback_data=AdminCallback(action="panel").pack(),
+                )
+            )
+
+            await query.message.edit_text(
+                text,
+                reply_markup=b.as_markup(),
+            )
+
+    elif action == "user_detail":
+        target_id = callback_data.target_id
+        target_user = await db.get_user(target_id)
+
+        if not target_user:
+            await query.answer(
+                get_text("admin_user_not_found", lang),
+                show_alert=True,
+            )
+            return
+
+        name = target_user["full_name"] or str(target_id)
+        balance = format_amount(target_user["balance"])
+        banned = target_user["is_banned"]
+
+        text = (
+            f"<b>{name}</b>\\n"
+            f"🆔 <code>{target_id}</code>\\n"
+            f"💰 {balance}\\n"
+            f"🚫 {'نعم' if banned else 'لا'}"
+        )
+
+        await query.message.edit_text(
+            text,
+            reply_markup=admin_user_actions_keyboard(target_id, lang, bool(target_user["is_banned"])),
+        )
 
     elif action == "logs":
         logs = await db.get_recent_logs(30)
@@ -1996,8 +2068,20 @@ async def admin_callback(
         name = target_user["full_name"] if target_user else str(target_id)
         bal  = f"{target_user['balance']:.0f}" if target_user else "0"
         await state.update_data(target_telegram_id=target_id)
+        b = InlineKeyboardBuilder()
+        b.row(
+            InlineKeyboardButton(
+                text=get_text("btn_back", lang),
+                callback_data=AdminCallback(
+                    action="user_detail",
+                    target_id=target_id,
+                ).pack(),
+            )
+        )
+
         await query.message.edit_text(
-            get_text("admin_add_balance_ask_amount", lang, name=name, balance=bal)
+            get_text("admin_add_balance_ask_amount", lang, name=name, balance=bal),
+            reply_markup=b.as_markup(),
         )
         await state.set_state(AdminStates.waiting_add_balance_amount)
 
@@ -2007,8 +2091,20 @@ async def admin_callback(
         name = target_user["full_name"] if target_user else str(target_id)
         bal  = f"{target_user['balance']:.0f}" if target_user else "0"
         await state.update_data(target_telegram_id=target_id)
+        b = InlineKeyboardBuilder()
+        b.row(
+            InlineKeyboardButton(
+                text=get_text("btn_back", lang),
+                callback_data=AdminCallback(
+                    action="user_detail",
+                    target_id=target_id,
+                ).pack(),
+            )
+        )
+
         await query.message.edit_text(
-            get_text("admin_sub_balance_ask_amount", lang, name=name, balance=bal)
+            get_text("admin_sub_balance_ask_amount", lang, name=name, balance=bal),
+            reply_markup=b.as_markup(),
         )
         await state.set_state(AdminStates.waiting_sub_balance_amount)
 
@@ -2016,6 +2112,13 @@ async def admin_callback(
         target_id   = callback_data.target_id
         target_user = await db.get_user(target_id)
         if target_user:
+            if _is_admin(target_id, config):
+                await query.answer(
+                    "⚠️ لا يمكن حظر حساب أدمن.",
+                    show_alert=True,
+                )
+                return
+
             is_banned = bool(target_user["is_banned"])
             await db.ban_user(target_id, not is_banned)
             key = "admin_ban_done" if not is_banned else "admin_unban_done"

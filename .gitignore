@@ -1,0 +1,15 @@
+.env
+.env.*
+__pycache__/
+*.py[cod]
+*.db
+*.sqlite
+*.sqlite3
+*.log
+*.backup
+*.backup2
+*.bak
+*.save
+*.before_*
+*.users_buttons_fixed
+.DS_Store
