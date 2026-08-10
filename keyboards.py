@@ -1147,10 +1147,19 @@ def ops_tx_detail_keyboard(tx: Dict[str, Any], lang: str) -> InlineKeyboardMarku
     return b.as_markup()
 
 
-def admin_user_actions_keyboard(target_telegram_id: int, lang: str) -> InlineKeyboardMarkup:
-    add_label = {"ar": "➕ إضافة رصيد",    "en": "➕ Add Balance"}.get(lang,    "➕ Add Balance")
-    sub_label = {"ar": "➖ خصم رصيد",      "en": "➖ Subtract Balance"}.get(lang, "➖ Subtract Balance")
-    ban_label = {"ar": "🚫 حظر / رفع حظر", "en": "🚫 Ban / Unban"}.get(lang,    "🚫 Ban / Unban")
+def admin_user_actions_keyboard(
+    target_telegram_id: int,
+    lang: str,
+    is_banned: bool = False,
+) -> InlineKeyboardMarkup:
+    add_label = {"ar": "➕ إضافة رصيد", "en": "➕ Add Balance"}.get(lang, "➕ Add Balance")
+    sub_label = {"ar": "➖ خصم رصيد", "en": "➖ Subtract Balance"}.get(lang, "➖ Subtract Balance")
+
+    if is_banned:
+        ban_label = {"ar": "✅ رفع الحظر", "en": "✅ Unban"}.get(lang, "✅ Unban")
+    else:
+        ban_label = {"ar": "🚫 حظر المستخدم", "en": "🚫 Ban User"}.get(lang, "🚫 Ban User")
+
     b = InlineKeyboardBuilder()
     b.row(
         InlineKeyboardButton(text=add_label, callback_data=AdminCallback(action="add_bal", target_id=target_telegram_id).pack()),
