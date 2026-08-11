@@ -13,3 +13,4 @@ __pycache__/
 *.before_*
 *.users_buttons_fixed
 .DS_Store
+*.db-*
