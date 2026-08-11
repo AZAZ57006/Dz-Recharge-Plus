@@ -2013,9 +2013,9 @@ async def admin_callback(
         banned = target_user["is_banned"]
 
         text = (
-            f"<b>{name}</b>\\n"
-            f"🆔 <code>{target_id}</code>\\n"
-            f"💰 {balance}\\n"
+            f"<b>{name}</b>\n"
+            f"🆔 <code>{target_id}</code>\n"
+            f"💰 {balance}\n"
             f"🚫 {'نعم' if banned else 'لا'}"
         )
 
