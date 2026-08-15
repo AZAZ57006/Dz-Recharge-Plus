@@ -72,6 +72,7 @@ from keyboards import (
     favorite_actions_keyboard, favorite_delete_confirm_keyboard, favorites_list_keyboard,
     game_confirm_keyboard, game_packages_keyboard,
     games_menu_keyboard,
+    help_keyboard,
     gift_amounts_keyboard, gift_confirm_keyboard, gift_cards_menu_keyboard,
     history_details_keyboard, history_filter_keyboard, history_list_keyboard,
     language_keyboard,
@@ -271,7 +272,7 @@ async def _show_favorites_list(message: Message, db: Database, user_id: int, lan
 # ---------------------------------------------------------------------------
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, db: Database, config: Config) -> None:
+async def cmd_start(message: Message, db: Database, config: Config, state: FSMContext) -> None:
     user = message.from_user
     if not user:
         return
@@ -283,6 +284,13 @@ async def cmd_start(message: Message, db: Database, config: Config) -> None:
     if db_user.get("is_banned") and not _is_admin(user.id, config):
         await message.answer(get_text("banned", db_user["language"]))
         return
+
+    # حذف رسالة /start حتى لا تتراكم رسائل الواجهة
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
     lang = db_user["language"]
     await db.log("start", user_id=db_user["id"])
     role = await resolve_role(user.id, db, config.ADMIN_IDS)
@@ -290,10 +298,11 @@ async def cmd_start(message: Message, db: Database, config: Config) -> None:
         kb = distributor_reply_keyboard(lang)
     else:
         kb = utility_reply_keyboard(lang, _is_admin(user.id, config))
-    await message.answer(
+    sent = await message.answer(
         get_text("welcome", lang, name=user.first_name or "User"),
         reply_markup=kb,
     )
+    await state.update_data(home_message_id=sent.message_id)
 
 
 # ---------------------------------------------------------------------------
@@ -338,6 +347,12 @@ async def cmd_balance(
         return
 
     lang = await _lang(db, user.id)
+
+    # تنظيف رسالة المستخدم «محفظتي» أو /balance
+    try:
+        await message.delete()
+    except Exception:
+        pass
 
     # محفظة المستخدم الداخلية في bot.db
     balance = await db.get_balance(user.id)
@@ -497,16 +512,53 @@ async def handle_text(
         await cmd_history(message, db, config, state)
         return
     if text in (get_text("btn_games", "ar"), get_text("btn_games", "en")):
-        await message.answer(get_text("games_menu", lang), reply_markup=games_menu_keyboard(lang))
+        data = await state.get_data()
+        home_message_id = data.get("home_message_id")
+
+        if home_message_id:
+            try:
+                await message.bot.delete_message(
+                    chat_id=message.chat.id,
+                    message_id=home_message_id,
+                )
+            except Exception:
+                pass
+
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        sent = await message.answer(
+            get_text("games_menu", lang),
+            reply_markup=games_menu_keyboard(lang),
+        )
+        await state.update_data(home_message_id=sent.message_id)
         return
+
     if text in (get_text("btn_gift_cards", "ar"), get_text("btn_gift_cards", "en")):
-        await message.answer(get_text("gift_cards_menu", lang), reply_markup=gift_cards_menu_keyboard(lang))
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        await message.answer(
+            get_text("gift_cards_menu", lang),
+            reply_markup=gift_cards_menu_keyboard(lang),
+        )
         return
     if text in (get_text("btn_language", "ar"), get_text("btn_language", "en")):
         await cmd_language(message, db)
         return
     if text in (get_text("btn_help", "ar"), get_text("btn_help", "en")):
-        await cmd_help(message, db, config)
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        await message.answer(
+            get_text("help_text", lang),
+            reply_markup=help_keyboard(lang),
+        )
         return
     if text in (get_text("btn_admin", "ar"), get_text("btn_admin", "en")):
         await cmd_admin(message, db, config)
@@ -599,6 +651,12 @@ async def handle_text(
     # Standard recharge: phone*amount — detect operator and show it
     parsed = parse_recharge_input(text)
     if parsed:
+        # حذف رسالة المستخدم بعد التعرف عليها كطلب فليكسي صالح
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
         phone, amount = parsed
         operator = OperatorDetector.detect(phone)
 
@@ -725,6 +783,13 @@ async def menu_callback(
             get_text("choose_language", lang),
             reply_markup=language_keyboard(),
         )
+    elif action == "home":
+        db_user = await _user(db, user.id)
+        if db_user:
+            await query.message.edit_text(
+                get_text("welcome", lang, name=user.first_name or "User"),
+            )
+
     elif action == "cancel":
         await query.message.edit_text(get_text("recharge_cancelled", lang))
     elif action == "close":
@@ -1183,7 +1248,10 @@ async def distributor_activy_confirm_callback(
 
     # ── confirmed == -1: cancel ────────────────────────────────────────────
     if callback_data.confirmed == -1:
-        await query.message.edit_text(get_text("recharge_cancelled", lang))
+        await query.message.edit_text(
+            get_text("games_menu", lang),
+            reply_markup=games_menu_keyboard(lang),
+        )
         await query.answer()
         return
 
@@ -1338,7 +1406,10 @@ async def activy_callback(
         return
 
     if callback_data.confirmed == -1:
-        await query.message.edit_text(get_text("recharge_cancelled", lang))
+        await query.message.edit_text(
+            get_text("gift_cards_menu", lang),
+            reply_markup=gift_cards_menu_keyboard(lang),
+        )
         await query.answer()
         return
 
@@ -1743,6 +1814,7 @@ async def deposit_callback(
     config: Config,
     bot: Bot,
     wallet_service: WalletService,
+    state: FSMContext,
 ) -> None:
     user = query.from_user
     db_user = await _user(db, user.id)
@@ -1751,6 +1823,29 @@ async def deposit_callback(
         return
     lang = db_user["language"]
     action = callback_data.action
+
+    if action == "exit":
+        await state.clear()
+
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
+        await query.message.answer(
+            get_text(
+                "welcome",
+                lang,
+                name=user.first_name or "User",
+            ),
+            reply_markup=utility_reply_keyboard(
+                lang,
+                _is_admin(user.id, config),
+            ),
+        )
+
+        await query.answer()
+        return
 
     if action == "menu":
         await query.message.edit_text(
@@ -1939,6 +2034,21 @@ async def admin_callback(
         await query.message.edit_text(
             get_text("admin_panel", lang),
             reply_markup=admin_keyboard(lang, config.MOCK_MODE),
+        )
+
+    elif action == "exit":
+        role = await resolve_role(user.id, db, config.ADMIN_IDS)
+
+        await query.message.delete()
+
+        if role == ROLE_DISTRIBUTOR:
+            kb = distributor_reply_keyboard(lang)
+        else:
+            kb = utility_reply_keyboard(lang, True)
+
+        await query.message.answer(
+            get_text("welcome", lang, name=user.first_name or "User"),
+            reply_markup=kb,
         )
 
     elif action == "stats":

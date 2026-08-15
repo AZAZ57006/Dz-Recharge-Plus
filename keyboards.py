@@ -269,9 +269,23 @@ def _btn(text: str, callback: CallbackData) -> InlineKeyboardButton:
 # ---------------------------------------------------------------------------
 
 def wallet_keyboard(lang: str) -> InlineKeyboardMarkup:
-    """Balance view: has Deposit request only."""
+    """Customer wallet screen."""
     b = InlineKeyboardBuilder()
-    b.row(_btn(get_text("btn_deposit", lang), DepositCallback(action="menu")))
+
+    b.row(
+        _btn(
+            get_text("btn_deposit", lang),
+            DepositCallback(action="menu"),
+        )
+    )
+
+    b.row(
+        _btn(
+            "⬅️ العودة للقائمة الرئيسية",
+            DepositCallback(action="exit"),
+        )
+    )
+
     return b.as_markup()
 
 
@@ -632,6 +646,7 @@ def favorites_list_keyboard(favorites: List[Dict[str, Any]], lang: str) -> Inlin
     if len(favorites) > 5:
         b.row(_btn(get_text("btn_favorites_search", lang), FavoriteMenuCallback(action="search")))
     b.row(_btn(get_text("btn_favorites_add", lang), FavoriteMenuCallback(action="add")))
+    b.row(_btn(get_text("btn_back", lang), MenuCallback(action="home")))
     return b.as_markup()
 
 
@@ -705,7 +720,7 @@ def history_list_keyboard(
         search_row.append(_btn(get_text("btn_history_clear_search", lang), HistoryNavCallback(action="clear_search")))
     b.row(*search_row)
 
-    b.row(_btn(get_text("btn_back", lang), MenuCallback(action="close")))
+    b.row(_btn(get_text("btn_back", lang), MenuCallback(action="home")))
     return b.as_markup()
 
 
@@ -764,6 +779,7 @@ def games_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
             text=f"{game['emoji']} {name}",
             callback_data=GameSelectCallback(game_id=game_id).pack(),
         ))
+    b.row(_btn(get_text("btn_back", lang), MenuCallback(action="home")))
     return b.as_markup()
 
 
@@ -800,6 +816,7 @@ def gift_cards_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
             text=f"{card['emoji']} {name}",
             callback_data=GiftSelectCallback(card_type=card_type).pack(),
         ))
+    b.row(_btn(get_text("btn_back", lang), MenuCallback(action="home")))
     return b.as_markup()
 
 
@@ -824,6 +841,13 @@ def gift_confirm_keyboard(card_type: str, amount: int, lang: str) -> InlineKeybo
     return b.as_markup()
 
 
+
+def help_keyboard(lang: str) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.row(_btn(get_text("btn_back", lang), MenuCallback(action="home")))
+    return b.as_markup()
+
+
 # ---------------------------------------------------------------------------
 # Language
 # ---------------------------------------------------------------------------
@@ -842,38 +866,87 @@ def language_keyboard() -> InlineKeyboardMarkup:
 # ---------------------------------------------------------------------------
 
 def admin_keyboard(lang: str, mock_mode: bool) -> InlineKeyboardMarkup:
+    """Compact and organized Admin panel keyboard."""
     mock_status = get_text("mock_on", lang) if mock_mode else get_text("mock_off", lang)
+
     b = InlineKeyboardBuilder()
+
+    # 📊 Monitoring
     b.row(
-        InlineKeyboardButton(text=get_text("admin_btn_stats", lang),       callback_data=AdminCallback(action="stats").pack()),
-        InlineKeyboardButton(text=get_text("admin_btn_users", lang),       callback_data=AdminCallback(action="users").pack()),
+        InlineKeyboardButton(
+            text=get_text("admin_btn_stats", lang),
+            callback_data=AdminCallback(action="stats").pack(),
+        ),
+        InlineKeyboardButton(
+            text=get_text("admin_btn_dashboard", lang),
+            callback_data=DashboardCallback(screen="home").pack(),
+        ),
     )
     b.row(
-        InlineKeyboardButton(text=get_text("admin_btn_logs",  lang),       callback_data=AdminCallback(action="logs").pack()),
-        InlineKeyboardButton(text=get_text("admin_btn_txns",  lang),       callback_data=AdminCallback(action="txns").pack()),
+        InlineKeyboardButton(
+            text=get_text("admin_btn_logs", lang),
+            callback_data=AdminCallback(action="logs").pack(),
+        ),
+        InlineKeyboardButton(
+            text=get_text("admin_btn_txns", lang),
+            callback_data=AdminCallback(action="txns").pack(),
+        ),
+    )
+
+    # 👥 Users & money
+    b.row(
+        InlineKeyboardButton(
+            text=get_text("admin_btn_users", lang),
+            callback_data=AdminCallback(action="users").pack(),
+        ),
+        InlineKeyboardButton(
+            text=get_text("admin_btn_add_balance", lang),
+            callback_data=AdminCallback(action="add_balance").pack(),
+        ),
     )
     b.row(
-        InlineKeyboardButton(text=get_text("admin_btn_add_balance", lang), callback_data=AdminCallback(action="add_balance").pack()),
-        InlineKeyboardButton(text=get_text("admin_btn_broadcast",   lang), callback_data=AdminCallback(action="broadcast").pack()),
+        InlineKeyboardButton(
+            text=get_text("admin_btn_deposits", lang),
+            callback_data=AdminDepositCallback(action="list").pack(),
+        ),
+        InlineKeyboardButton(
+            text=get_text("admin_btn_distributors", lang),
+            callback_data=DistributorAdminCallback(action="menu").pack(),
+        ),
     )
+
+    # 🛠 Operations
     b.row(
-        InlineKeyboardButton(text=get_text("admin_btn_deposits", lang),    callback_data=AdminDepositCallback(action="list").pack()),
+        InlineKeyboardButton(
+            text=get_text("admin_btn_ops_center", lang),
+            callback_data=OpsCallback(screen="home").pack(),
+        ),
+        InlineKeyboardButton(
+            text=get_text("admin_btn_broadcast", lang),
+            callback_data=AdminCallback(action="broadcast").pack(),
+        ),
     )
+
+    # 🔧 Developer / testing tools
     b.row(
-        InlineKeyboardButton(text=get_text("admin_btn_dashboard", lang),   callback_data=DashboardCallback(screen="home").pack()),
+        InlineKeyboardButton(
+            text=f"🔧 Mock: {mock_status}",
+            callback_data=AdminCallback(action="toggle_mock").pack(),
+        ),
+        InlineKeyboardButton(
+            text=get_text("admin_btn_preview_dist", lang),
+            callback_data=AdminCallback(action="preview_dist").pack(),
+        ),
     )
+
+    # 🏠 Exit
     b.row(
-        InlineKeyboardButton(text=get_text("admin_btn_ops_center", lang),  callback_data=OpsCallback(screen="home").pack()),
+        InlineKeyboardButton(
+            text="⬅️ العودة للقائمة الرئيسية",
+            callback_data=AdminCallback(action="exit").pack(),
+        )
     )
-    b.row(
-        InlineKeyboardButton(text=get_text("admin_btn_distributors", lang), callback_data=DistributorAdminCallback(action="menu").pack()),
-    )
-    b.row(
-        InlineKeyboardButton(text=get_text("admin_btn_preview_dist", lang), callback_data=AdminCallback(action="preview_dist").pack()),
-    )
-    b.row(
-        InlineKeyboardButton(text=f"🔧 Mock: {mock_status}",               callback_data=AdminCallback(action="toggle_mock").pack()),
-    )
+
     return b.as_markup()
 
 

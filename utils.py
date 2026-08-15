@@ -55,20 +55,20 @@ TEXTS: dict[str, dict[str, str]] = {
     # ── Main menu ────────────────────────────────────────────────────────────
     "welcome": {
         "ar": (
-            "👋 مرحباً <b>{name}</b>!\n\n"
-            "أرسل رقم الهاتف والمبلغ لشحن رصيد، أو رقم الهاتف فقط لعرض عروض أكتيفي.\n\n"
-            "📌 <b>أمثلة:</b>\n"
-            "• <code>0661234567*100</code> — شحن 100 دج\n"
-            "• <code>0661234567</code> — عرض عروض أكتيفي\n\n"
-            "أوامر أخرى: /balance /history /language /help"
+            "👋 مرحبًا <b>{name}</b>!\n\n"
+            "⚡ <b>RechargeDz Pro</b>\n\n"
+            "اختر الخدمة التي تريدها من القائمة بالأسفل 👇\n\n"
+            "📱 للشحن السريع يمكنك أيضًا إرسال:\n"
+            "<code>0661234567*100</code>\n\n"
+            "💡 أو أرسل رقم الهاتف فقط لعرض عروض Activy."
         ),
         "en": (
-            "👋 Welcome, <b>{name}</b>!\n\n"
-            "Send a phone number and amount to recharge, or just a phone number to see Activy offers.\n\n"
-            "📌 <b>Examples:</b>\n"
-            "• <code>0661234567*100</code> — top up 100 DZD\n"
-            "• <code>0661234567</code> — show Activy offers\n\n"
-            "Other commands: /balance /history /language /help"
+            "👋 Welcome <b>{name}</b>!\n\n"
+            "⚡ <b>RechargeDz Pro</b>\n\n"
+            "Choose a service from the menu below 👇\n\n"
+            "📱 For quick recharge, you can also send:\n"
+            "<code>0661234567*100</code>\n\n"
+            "💡 Or send a phone number alone to view Activy offers."
         ),
     },
     "btn_games":       {"ar": "🕹️ ألعاب",               "en": "🕹️ Games"},
