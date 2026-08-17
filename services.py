@@ -897,6 +897,7 @@ class RechargeService:
         plan_code: str,
         plan_name: str,
         amount: float,
+        is_admin: bool = False,
     ) -> Dict[str, Any]:
         """
         Activate a live OneClick fixed plan (plan_code/plan_name/amount are
@@ -904,7 +905,7 @@ class RechargeService:
         """
         price = float(amount)
         balance = await self._db.get_balance(telegram_id)
-        if balance < price:
+        if not is_admin and balance < price:
             return {"success": False, "reason": "insufficient_balance",
                     "balance": balance, "required": price}
 
@@ -926,7 +927,8 @@ class RechargeService:
             return {"success": False, "reason": "api_error"}
 
         if result.success:
-            await self._db.adjust_balance(telegram_id, -price)
+            if not is_admin:
+                await self._db.adjust_balance(telegram_id, -price)
             await self._db.update_transaction(tx_id, "success", str(result.raw), result.reference)
             await self._db.log(
                 "activy_recharge",

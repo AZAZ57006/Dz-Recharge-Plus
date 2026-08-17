@@ -255,19 +255,21 @@ TEXTS: dict[str, dict[str, str]] = {
     },
     "activy_confirm": {
         "ar": (
-            "🧾 <b>تأكيد عرض أكتيفي</b>\n\n"
+            "📦 <b>تأكيد العرض</b>\n"
             "📞 <code>{phone}</code>\n"
             "🏢 {operator}\n"
-            "📦 <b>{offer}</b>\n"
-            "💰 <b>{price}</b>\n\n"
+            "💎 <b>{offer}</b>\n"
+            "💰 السعر: <b>{price}</b>\n"
+            "💳 الرصيد: <b>{balance}</b>\n\n"
             "هل تريد المتابعة؟"
         ),
         "en": (
-            "🧾 <b>Activy Offer Confirmation</b>\n\n"
+            "📦 <b>Confirm Offer</b>\n"
             "📞 <code>{phone}</code>\n"
             "🏢 {operator}\n"
-            "📦 <b>{offer}</b>\n"
-            "💰 <b>{price}</b>\n\n"
+            "💎 <b>{offer}</b>\n"
+            "💰 Price: <b>{price}</b>\n"
+            "💳 Balance: <b>{balance}</b>\n\n"
             "Do you want to proceed?"
         ),
     },

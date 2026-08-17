@@ -1309,11 +1309,14 @@ async def distributor_activy_confirm_callback(
 
     # ── confirmed == 0: show the confirm screen ────────────────────────────
     if callback_data.confirmed == 0:
+        balance = await db.get_balance(user.id)
+
         text = get_text("activy_confirm", lang,
                         phone=callback_data.phone,
                         operator=OperatorDetector.label(operator, lang),
                         offer=plan_name,
-                        price=format_amount(plan_amount))
+                        price=format_amount(plan_amount),
+                        balance=format_amount(balance))
         token = secrets.token_hex(8)
         await query.message.edit_text(
             text,
@@ -1372,6 +1375,7 @@ async def distributor_activy_confirm_callback(
             plan_code=callback_data.plan_code,
             plan_name=plan_name,
             amount=plan_amount,
+            is_admin=_is_admin(user.id, config),
         )
         logger.info(
             "Dist activy: process_activy returned — chat_id=%s success=%s reason=%s ref=%s",
@@ -1526,6 +1530,7 @@ async def activy_callback(
             plan_code=callback_data.plan_code,
             plan_name=plan_name,
             amount=plan_amount,
+            is_admin=_is_admin(user.id, config),
         )
         if token:
             await db.finish_idempotency_key(token, "success" if result.get("success") else "failed")
