@@ -1326,9 +1326,13 @@ async def distributor_activy_confirm_callback(
 
     # ── confirmed == -1: cancel ────────────────────────────────────────────
     if callback_data.confirmed == -1:
-        await query.message.edit_text(
-            get_text("games_menu", lang),
-            reply_markup=games_menu_keyboard(lang),
+        # Return through the central Home handler so the correct
+        # distributor/customer ReplyKeyboardMarkup is restored.
+        await query.message.delete()
+        await query.bot.send_message(
+            chat_id=user.id,
+            text=get_text("welcome", lang, name=user.first_name or "User"),
+            reply_markup=distributor_reply_keyboard(lang),
         )
         await query.answer()
         return
@@ -1484,9 +1488,12 @@ async def activy_callback(
         return
 
     if callback_data.confirmed == -1:
-        await query.message.edit_text(
-            get_text("gift_cards_menu", lang),
-            reply_markup=gift_cards_menu_keyboard(lang),
+        # Return to the main Home screen, not the Gift Cards menu.
+        await query.message.delete()
+        await query.bot.send_message(
+            chat_id=user.id,
+            text=get_text("welcome", lang, name=user.first_name or "User"),
+            reply_markup=utility_reply_keyboard(lang, _is_admin(user.id, config)),
         )
         await query.answer()
         return
