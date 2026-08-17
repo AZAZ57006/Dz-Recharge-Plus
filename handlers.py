@@ -913,6 +913,7 @@ async def recharge_confirm_callback(
     callback_data: ConfirmCallback,
     db: Database,
     config: Config,
+    api: OneClickAPI,
     recharge_service: RechargeService,
     tracker: RechargeTracker,
 ) -> None:
@@ -974,12 +975,23 @@ async def recharge_confirm_callback(
 
     async def _render_success_async(result: Dict[str, Any]):
         op_label = OperatorDetector.label(result.get("operator") or operator or "unknown", lang)
-        balance = await db.get_balance(user.id)
+
+        if _is_admin(user.id, config):
+            account = await api.get_account_balance()
+            balance = account.get("balance", 0.0) if account.get("success") else 0.0
+        else:
+            balance = await db.get_balance(user.id)
+
+        if _is_admin(user.id, config):
+            balance_text = f"{balance:.2f}".rstrip("0").rstrip(".")
+        else:
+            balance_text = format_amount(balance)
+
         text = get_text("recharge_success", lang,
                         phone=result["phone"],
                         operator=op_label,
                         amount=str(result["amount"]),
-                        balance=format_amount(balance))
+                        balance=balance_text)
         return text, None
 
     def _render_failure(result: Dict[str, Any]):
@@ -1473,11 +1485,14 @@ async def activy_callback(
     plan_amount = float(plan.get("amount", 0))
 
     if callback_data.confirmed == 0:
+        balance = await db.get_balance(user.id)
+
         text = get_text("activy_confirm", lang,
                         phone=callback_data.phone,
                         operator=OperatorDetector.label(operator, lang),
                         offer=plan_name,
-                        price=format_amount(plan_amount))
+                        price=format_amount(plan_amount),
+                        balance=format_amount(balance))
         # Mint a fresh single-use idempotency token for this confirmation
         # screen. It is echoed back on the Confirm/Cancel taps so a duplicate
         # confirm (Telegram retry or double-tap) can be detected and ignored.
@@ -1537,13 +1552,22 @@ async def activy_callback(
         if result.get("success"):
             od   = result["offer"]
             name = od["name_ar"] if lang == "ar" else od["name_en"]
-            balance = await db.get_balance(user.id)
+            if _is_admin(user.id, config):
+                account = await api.get_account_balance()
+                balance = account.get("balance", 0.0) if account.get("success") else 0.0
+            else:
+                balance = await db.get_balance(user.id)
             op_label = OperatorDetector.label(operator, lang)
+            if _is_admin(user.id, config):
+                balance_text = f"{balance:.2f}".rstrip("0").rstrip(".")
+            else:
+                balance_text = format_amount(balance)
+
             text = get_text("activy_success", lang,
                             phone=result["phone"],
                             operator=op_label,
                             offer=name,
-                            balance=format_amount(balance))
+                            balance=balance_text)
             result["_rendered"] = (text, None)
         return result
 

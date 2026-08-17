@@ -275,38 +275,20 @@ TEXTS: dict[str, dict[str, str]] = {
     },
     "activy_success": {
         "ar": (
-            "✅ <b>تم تفعيل العرض بنجاح</b>\n\n"
-            "📞 <code>{phone}</code>\n"
-            "🏢 {operator}\n"
-            "📦 <b>{offer}</b>\n"
-            "💳 الرصيد: <b>{balance}</b>\n\n"
-            "شكراً لاستخدامك RechargeDz Pro 🙏"
+            "<b>{offer}</b> -> <code>{phone}</code> : OK, Solde: {balance} da.✅"
         ),
         "en": (
-            "✅ <b>Offer Activated</b>\n\n"
-            "📞 <code>{phone}</code>\n"
-            "🏢 {operator}\n"
-            "📦 <b>{offer}</b>\n"
-            "💳 Balance: <b>{balance}</b>\n\n"
-            "Thank you for using RechargeDz Pro 🙏"
+            "<b>{offer}</b> -> <code>{phone}</code> : OK, Solde: {balance} da.✅"
         ),
     },
     "activy_failed_card": {
         "ar": (
-            "❌ <b>فشلت العملية</b>\n\n"
-            "📞 <code>{phone}</code>\n"
-            "🏢 {operator}\n"
-            "📦 <b>{offer}</b>\n"
-            "⚠️ {reason}\n\n"
-            "لم يتم خصم أي رصيد من محفظتك."
+            "<b>{offer}</b> -> <code>{phone}</code> : FAILED ❌\n"
+            "⚠️ {reason}"
         ),
         "en": (
-            "❌ <b>Operation Failed</b>\n\n"
-            "📞 <code>{phone}</code>\n"
-            "🏢 {operator}\n"
-            "📦 <b>{offer}</b>\n"
-            "⚠️ {reason}\n\n"
-            "No balance was deducted from your wallet."
+            "<b>{offer}</b> -> <code>{phone}</code> : FAILED ❌\n"
+            "⚠️ {reason}"
         ),
     },
     "activy_duplicate_request": {
