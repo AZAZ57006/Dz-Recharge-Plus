@@ -393,8 +393,6 @@ class OneClickAPI:
         where OneClick returns the offers compatible with the phone number.
         """
         for attempt in range(_TOPUP_POLL_MAX):
-            await asyncio.sleep(_TOPUP_POLL_INTERVAL)
-
             try:
                 resp = await self._get(
                     f"/v2/topup/checkStatus/ID/{topup_id}"
@@ -438,6 +436,10 @@ class OneClickAPI:
                     raw=resp.raw,
                     suggested_offers=suggested_offers,
                 )
+
+            # If the status is not terminal yet, wait before the next check.
+            if attempt < _TOPUP_POLL_MAX - 1:
+                await asyncio.sleep(_TOPUP_POLL_INTERVAL)
 
         logger.error(
             "Polling timed out for topup_id=%s after %d attempts",
