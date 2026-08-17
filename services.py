@@ -216,6 +216,7 @@ class APIResponse:
     message: str
     code: str = ""
     raw: Optional[Dict[str, Any]] = None
+    suggested_offers: Optional[List[Dict[str, Any]]] = None
 
     def to_log_str(self) -> str:
         return f"success={self.success} ref={self.reference} code={self.code}"
@@ -259,7 +260,16 @@ class OneClickAPI:
 
     def _url(self, path: str) -> str:
         """Build an absolute URL from the configured base and the given path."""
-        return self._config.ONECLICK_API_URL.rstrip("/") + path
+        base = self._config.ONECLICK_API_URL.rstrip("/")
+
+        # Allow API calls to explicitly target another API version,
+        # e.g. /v2/topup/checkStatus/... while the normal base is /v3.
+        if path.startswith("/v2/"):
+            if base.endswith("/v3"):
+                base = base[:-3].rstrip("/")
+            return base + path
+
+        return base + path
 
     def _get_session(self) -> aiohttp.ClientSession:
         if not self._session or self._session.closed:
@@ -369,51 +379,79 @@ class OneClickAPI:
 
         raise NetworkError(str(last_exc))
 
-    async def _poll_topup_status(self, ref: str) -> APIResponse:
+    async def _poll_topup_status(self, topup_id: str) -> APIResponse:
         """
-        Poll GET /mobile/check-ref/{ref} until a terminal state is reached.
+        Poll OneClick v2 status endpoint using the topup ID returned by
+        POST /v3/mobile/send.
 
-        Terminal states: FULFILLED (success), REFUNDED (failed), UNKNOWN_ERROR (wait 24h).
+        The v2 status response may contain:
+          - status
+          - refund_message
+          - suggested_offers
+
+        suggested_offers is especially important for GETMENU_* requests,
+        where OneClick returns the offers compatible with the phone number.
         """
         for attempt in range(_TOPUP_POLL_MAX):
             await asyncio.sleep(_TOPUP_POLL_INTERVAL)
+
             try:
-                resp = await self._get(f"/mobile/check-ref/{ref}")
+                resp = await self._get(
+                    f"/v2/topup/checkStatus/ID/{topup_id}"
+                )
             except (NetworkError, APIError):
-                continue  # transient network issue — keep polling
+                continue
 
             if not resp.raw:
                 continue
 
-            data = resp.raw.get("data", {})
-            status = str(data.get("status", "")).upper()
+            topup = resp.raw.get("topup", {})
+            status = str(topup.get("status", "")).upper()
 
-            logger.debug("Polling ref=%s attempt=%d status=%s", ref, attempt + 1, status)
+            logger.debug(
+                "Polling topup_id=%s attempt=%d status=%s",
+                topup_id,
+                attempt + 1,
+                status,
+            )
 
             if status in _TOPUP_FINAL_STATES:
+                suggested_offers = topup.get("suggested_offers") or []
+                refund_msg = str(topup.get("refund_message", ""))
+
                 success = status == "FULFILLED"
-                refund_msg = str(data.get("refund_message", ""))
+
                 logger.info(
-                    "Recharge completion flow: polling /mobile/check-ref/%s reached terminal "
-                    "state — attempt=%d status=%s success=%s",
-                    ref, attempt + 1, status, success,
+                    "OneClick status — topup_id=%s attempt=%d status=%s "
+                    "suggested_offers=%d",
+                    topup_id,
+                    attempt + 1,
+                    status,
+                    len(suggested_offers),
                 )
+
                 return APIResponse(
                     success=success,
-                    reference=str(data.get("_id", ref)),
+                    reference=str(topup.get("_id", topup_id)),
                     message=refund_msg if not success else "FULFILLED",
                     code=status,
                     raw=resp.raw,
+                    suggested_offers=suggested_offers,
                 )
 
-        # Timed out — treat as unknown
-        logger.error("Polling timed out for ref=%s after %d attempts", ref, _TOPUP_POLL_MAX)
+        logger.error(
+            "Polling timed out for topup_id=%s after %d attempts",
+            topup_id,
+            _TOPUP_POLL_MAX,
+        )
+
         return APIResponse(
             success=False,
-            reference=ref,
+            reference=topup_id,
             message="Top-up status unknown after polling timeout",
             code="POLL_TIMEOUT",
             raw=None,
+            suggested_offers=[],
         )
 
     # ── mock helpers ─────────────────────────────────────────────────────────
@@ -506,10 +544,43 @@ class OneClickAPI:
         if not send_resp.success:
             return send_resp
 
-        poll_result = await self._poll_topup_status(ref)
+        topup_id = ""
+        if send_resp.raw:
+            topup_id = str(
+                send_resp.raw.get("data", {}).get("topupId", "")
+            )
+
+        if not topup_id:
+            logger.error(
+                "Activy recharge: OneClick did not return topupId — ref=%s",
+                ref,
+            )
+            return APIResponse(
+                success=False,
+                reference=ref,
+                message="OneClick did not return topupId",
+                code="MISSING_TOPUP_ID",
+                raw=send_resp.raw,
+                suggested_offers=[],
+            )
+
         logger.info(
-            "Recharge completion flow: poll finished (activy) — ref=%s success=%s code=%s message=%s",
-            ref, poll_result.success, poll_result.code, poll_result.message,
+            "Recharge completion flow: starting status poll — topup_id=%s ref=%s",
+            topup_id,
+            ref,
+        )
+
+        poll_result = await self._poll_topup_status(topup_id)
+
+        logger.info(
+            "Recharge completion flow: poll finished (activy) — topup_id=%s ref=%s "
+            "success=%s code=%s message=%s suggested_offers=%d",
+            topup_id,
+            ref,
+            poll_result.success,
+            poll_result.code,
+            poll_result.message,
+            len(poll_result.suggested_offers or []),
         )
         return poll_result
 
@@ -637,6 +708,68 @@ class OneClickAPI:
             and p.get("amount", 0) > 0
         ]
         return {"success": True, "plans": plans, "error_message": ""}
+
+    async def get_activy_offers(
+        self, phone: str, operator: str
+    ) -> Dict[str, Any]:
+        """
+        Fetch Activy offers specifically available for the given phone number.
+
+        OneClick GETMENU works by sending a zero-value top-up request using
+        GETMENU_<Operator>. The resulting topupId is then checked through the
+        v2 status endpoint, whose suggested_offers contains the offers
+        compatible with the phone number.
+        """
+        live_operator = _OPERATOR_LIVE_NAME.get(operator)
+        if not live_operator:
+            return {
+                "success": False,
+                "plans": [],
+                "error_message": "Unknown operator",
+            }
+
+        menu_code = f"GETMENU_{live_operator}"
+
+        logger.info(
+            "Activy GETMENU: requesting phone-specific offers — phone=%s "
+            "operator=%s plan_code=%s",
+            phone,
+            operator,
+            menu_code,
+        )
+
+        result = await self.recharge_activy(phone, menu_code, 0)
+
+        if result.suggested_offers:
+            plans = [
+                {
+                    "code": str(offer.get("plan_code", "")),
+                    "name": str(offer.get("typename", offer.get("plan_code", ""))),
+                    "amount": float(offer.get("amount", 0)),
+                    "operator": live_operator,
+                    "isEnabled": True,
+                }
+                for offer in result.suggested_offers
+                if offer.get("plan_code") and float(offer.get("amount", 0)) > 0
+            ]
+
+            logger.info(
+                "Activy GETMENU: received %d offers for phone=%s",
+                len(plans),
+                phone,
+            )
+
+            return {
+                "success": True,
+                "plans": plans,
+                "error_message": "",
+            }
+
+        return {
+            "success": False,
+            "plans": [],
+            "error_message": result.message or "No Activy offers returned",
+        }
 
     async def get_account_balance(self) -> Dict[str, Any]:
         """

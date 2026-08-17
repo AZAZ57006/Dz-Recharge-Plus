@@ -168,7 +168,7 @@ async def _show_activy_offers(
     db: Database, user_id: int, api: OneClickAPI,
 ) -> None:
     """Fetch live fixed plans for `operator` and show them, or report unavailability."""
-    plans_result = await api.get_fixed_plans(operator)
+    plans_result = await api.get_activy_offers(phone, operator)
     if not plans_result["success"] or not plans_result["plans"]:
         await message.answer(get_text("activy_no_plans", lang))
         await db.log(
@@ -193,7 +193,7 @@ async def _show_distributor_activy_offers(
     Fetches live plans identically but renders distributor_activy_offers_keyboard
     so tapping a plan fires DistributorActivyCallback, not ActivyCallback.
     _show_activy_offers and the customer path are completely untouched."""
-    plans_result = await api.get_fixed_plans(operator)
+    plans_result = await api.get_activy_offers(phone, operator)
     if not plans_result["success"] or not plans_result["plans"]:
         await message.answer(get_text("activy_no_plans", lang))
         await db.log(
@@ -537,29 +537,59 @@ async def handle_text(
         return
 
     if text in (get_text("btn_gift_cards", "ar"), get_text("btn_gift_cards", "en")):
-        try:
-            await message.delete()
-        except Exception:
-            pass
-        await message.answer(
-            get_text("gift_cards_menu", lang),
-            reply_markup=gift_cards_menu_keyboard(lang),
-        )
-        return
-    if text in (get_text("btn_language", "ar"), get_text("btn_language", "en")):
-        await cmd_language(message, db)
-        return
-    if text in (get_text("btn_help", "ar"), get_text("btn_help", "en")):
+        data = await state.get_data()
+        home_message_id = data.get("home_message_id")
+
+        if home_message_id:
+            try:
+                await message.bot.delete_message(
+                    chat_id=message.chat.id,
+                    message_id=home_message_id,
+                )
+            except Exception:
+                pass
+
         try:
             await message.delete()
         except Exception:
             pass
 
-        await message.answer(
+        sent = await message.answer(
+            get_text("gift_cards_menu", lang),
+            reply_markup=gift_cards_menu_keyboard(lang),
+        )
+        await state.update_data(home_message_id=sent.message_id)
+        return
+
+    if text in (get_text("btn_language", "ar"), get_text("btn_language", "en")):
+        await cmd_language(message, db)
+        return
+
+    if text in (get_text("btn_help", "ar"), get_text("btn_help", "en")):
+        data = await state.get_data()
+        home_message_id = data.get("home_message_id")
+
+        if home_message_id:
+            try:
+                await message.bot.delete_message(
+                    chat_id=message.chat.id,
+                    message_id=home_message_id,
+                )
+            except Exception:
+                pass
+
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        sent = await message.answer(
             get_text("help_text", lang),
             reply_markup=help_keyboard(lang),
         )
+        await state.update_data(home_message_id=sent.message_id)
         return
+
     if text in (get_text("btn_admin", "ar"), get_text("btn_admin", "en")):
         await cmd_admin(message, db, config)
         return
@@ -755,40 +785,88 @@ async def menu_callback(
 ) -> None:
     user = query.from_user
     lang = await _lang(db, user.id)
+
+    # Keep the persistent Home message ID before clearing the FSM.
+    data = await state.get_data()
+    home_message_id = data.get("home_message_id")
+
     await state.clear()
     action = callback_data.action
+
+    # When entering an inline section, remove the old Home message.
+    # This prevents Home messages from accumulating in the chat.
+    if action in ("games", "gift_cards", "balance", "history", "language"):
+        if home_message_id:
+            try:
+                await query.bot.delete_message(
+                    chat_id=user.id,
+                    message_id=home_message_id,
+                )
+            except Exception:
+                pass
 
     if action == "games":
         await query.message.edit_text(
             get_text("games_menu", lang),
             reply_markup=games_menu_keyboard(lang),
         )
+
     elif action == "gift_cards":
         await query.message.edit_text(
             get_text("gift_cards_menu", lang),
             reply_markup=gift_cards_menu_keyboard(lang),
         )
+
     elif action == "balance":
         balance = await db.get_balance(user.id)
         await query.message.edit_text(
             get_text("wallet_title", lang, balance=format_amount(balance)),
             reply_markup=wallet_keyboard(lang),
         )
+
     elif action == "history":
         db_user = await _user(db, user.id)
         if db_user:
-            await _show_history_list(query.message, db, db_user["id"], lang, 0, None, None, None, config, edit=True)
+            await _show_history_list(
+                query.message,
+                db,
+                db_user["id"],
+                lang,
+                0,
+                None,
+                None,
+                None,
+                config,
+                edit=True,
+            )
+
     elif action == "language":
         await query.message.edit_text(
             get_text("choose_language", lang),
             reply_markup=language_keyboard(),
         )
+
     elif action == "home":
-        db_user = await _user(db, user.id)
-        if db_user:
-            await query.message.edit_text(
-                get_text("welcome", lang, name=user.first_name or "User"),
-            )
+        # Delete the inline section message first.
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
+        role = await resolve_role(user.id, db, config.ADMIN_IDS)
+
+        if role == ROLE_DISTRIBUTOR:
+            kb = distributor_reply_keyboard(lang)
+        else:
+            kb = utility_reply_keyboard(lang, _is_admin(user.id, config))
+
+        sent = await query.message.answer(
+            get_text("welcome", lang, name=user.first_name or "User"),
+            reply_markup=kb,
+        )
+
+        # Remember the new single Home message.
+        await state.update_data(home_message_id=sent.message_id)
 
     elif action == "cancel":
         await query.message.edit_text(get_text("recharge_cancelled", lang))
@@ -1136,7 +1214,7 @@ async def distributor_activy_operator_callback(
         return
     lang = db_user["language"]
 
-    plans_result = await api.get_fixed_plans(callback_data.operator)
+    plans_result = await api.get_activy_offers(callback_data.phone, callback_data.operator)
     if not plans_result["success"] or not plans_result["plans"]:
         await query.message.edit_text(get_text("activy_no_plans", lang))
         await db.log(
@@ -1217,7 +1295,7 @@ async def distributor_activy_confirm_callback(
     operator = callback_data.operator
 
     # Re-fetch live plan data on every tap — same pattern as customer flow.
-    plans_result = await api.get_fixed_plans(operator) if operator != "unknown" else {"success": False, "plans": []}
+    plans_result = await api.get_activy_offers(callback_data.phone, operator) if operator != "unknown" else {"success": False, "plans": []}
     plan = next(
         (p for p in plans_result.get("plans", []) if p.get("code") == callback_data.plan_code),
         None,
@@ -1374,7 +1452,7 @@ async def activy_callback(
     lang = db_user["language"]
 
     operator = callback_data.operator
-    plans_result = await api.get_fixed_plans(operator) if operator != "unknown" else {"success": False, "plans": []}
+    plans_result = await api.get_activy_offers(callback_data.phone, operator) if operator != "unknown" else {"success": False, "plans": []}
     plan = next(
         (p for p in plans_result.get("plans", []) if p.get("code") == callback_data.plan_code),
         None,
@@ -1503,7 +1581,7 @@ async def activy_operator_callback(
         return
     lang = db_user["language"]
 
-    plans_result = await api.get_fixed_plans(callback_data.operator)
+    plans_result = await api.get_activy_offers(callback_data.phone, callback_data.operator)
     if not plans_result["success"] or not plans_result["plans"]:
         await query.message.edit_text(get_text("activy_no_plans", lang))
         await db.log(
