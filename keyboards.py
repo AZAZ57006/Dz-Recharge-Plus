@@ -555,7 +555,7 @@ def activy_offers_keyboard(
     b = InlineKeyboardBuilder()
     buttons = [
         InlineKeyboardButton(
-            text=f"{plan.get('name', plan.get('code', ''))} — {plan.get('amount')} دج",
+            text=f"\u2066{plan.get('name', plan.get('code', ''))} {plan.get('amount')}DA\u2069",
             callback_data=ActivyCallback(
                 phone=phone, operator=operator, plan_code=plan["code"], confirmed=0
             ).pack(),
