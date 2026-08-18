@@ -255,30 +255,34 @@ TEXTS: dict[str, dict[str, str]] = {
     },
     "activy_confirm": {
         "ar": (
-            "📦 <b>تأكيد العرض</b>\n"
+            "📦 <b>تأكيد العرض</b>\n\n"
             "📞 <code>{phone}</code>\n"
             "🏢 {operator}\n"
-            "💎 <b>{offer}</b>\n"
-            "💰 السعر: <b>{price}</b>\n"
-            "💳 الرصيد: <b>{balance}</b>\n\n"
+            "🎁 <b>{offer}</b>\n"
+            "💰 السعر: <b>{price}</b>DA\n"
+            "💳 رصيدك: <b>{balance}</b>DA\n\n"
             "هل تريد المتابعة؟"
         ),
         "en": (
-            "📦 <b>Confirm Offer</b>\n"
+            "📦 <b>Confirm Offer</b>\n\n"
             "📞 <code>{phone}</code>\n"
             "🏢 {operator}\n"
-            "💎 <b>{offer}</b>\n"
-            "💰 Price: <b>{price}</b>\n"
-            "💳 Balance: <b>{balance}</b>\n\n"
+            "🎁 <b>{offer}</b>\n"
+            "💰 Price: <b>{price}</b>DA\n"
+            "💳 Balance: <b>{balance}</b>DA\n\n"
             "Do you want to proceed?"
         ),
     },
     "activy_success": {
         "ar": (
-            "<b>{offer}</b> -> <code>{phone}</code> : OK, Solde: {balance} da.✅"
+            "✅ <b>{offer}</b>\n"
+            "📞 <code>{phone}</code>\n"
+            "💳 الرصيد: <b>{balance}DA</b>"
         ),
         "en": (
-            "<b>{offer}</b> -> <code>{phone}</code> : OK, Solde: {balance} da.✅"
+            "✅ <b>{offer}</b>\n"
+            "📞 <code>{phone}</code>\n"
+            "💳 Balance: <b>{balance}DA</b>"
         ),
     },
     "activy_failed_card": {
