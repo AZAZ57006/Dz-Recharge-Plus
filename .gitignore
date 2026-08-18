@@ -14,3 +14,7 @@ __pycache__/
 *.users_buttons_fixed
 .DS_Store
 *.db-*
+
+# Local development backups
+backups/
+services.py.before-v2
