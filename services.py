@@ -120,11 +120,11 @@ _OPERATOR_PREFIX: Dict[str, str] = {
     # Ooredoo (05xx)
     "55": "ooredoo", "56": "ooredoo", "57": "ooredoo",
     "58": "ooredoo", "59": "ooredoo",
-    # Mobilis (06xx + 078x)
+    # Mobilis (06xx)
     "66": "mobilis", "67": "mobilis", "68": "mobilis",
-    "69": "mobilis", "78": "mobilis",
-    # Djezzy (077x + 079x)
-    "77": "djezzy", "79": "djezzy",
+    "69": "mobilis",
+    # Djezzy (077x + 078x + 079x)
+    "77": "djezzy", "78": "djezzy", "79": "djezzy",
 }
 
 OPERATOR_DISPLAY: Dict[str, Dict[str, str]] = {

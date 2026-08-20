@@ -1332,11 +1332,24 @@ def dist_preview_entry_keyboard(
 
 def distributor_reply_keyboard(lang: str) -> ReplyKeyboardMarkup:
     """Persistent bottom keyboard for distributor-role users.
-    Shows Wallet/Ledger instead of Balance/History/Games/Gift Cards/Favorites."""
+
+    The distributor uses the same main UI as a normal customer.
+    Distributor-specific wallet/ledger logic remains handled by the
+    backend based on the user's role.
+
+    Admin is intentionally excluded from this keyboard.
+    """
     b = ReplyKeyboardBuilder()
     b.row(
-        KeyboardButton(text=get_text("btn_dist_wallet", lang)),
-        KeyboardButton(text=get_text("btn_dist_history", lang)),
+        KeyboardButton(text=get_text("btn_balance", lang)),
+        KeyboardButton(text=get_text("btn_history", lang)),
+    )
+    b.row(
+        KeyboardButton(text=get_text("btn_games", lang)),
+        KeyboardButton(text=get_text("btn_gift_cards", lang)),
+    )
+    b.row(
+        KeyboardButton(text=get_text("btn_favorites", lang)),
     )
     b.row(
         KeyboardButton(text=get_text("btn_language", lang)),

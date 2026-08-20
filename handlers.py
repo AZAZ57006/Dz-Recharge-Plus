@@ -506,10 +506,41 @@ async def handle_text(
     # parsing since they're plain text but must not be treated as a phone
     # number or fall through to "unknown command".
     if text in (get_text("btn_balance", "ar"), get_text("btn_balance", "en")):
-        await cmd_balance(message, db, config, api)
+        role = await resolve_role(user.id, db, config.ADMIN_IDS)
+
+        if role == ROLE_DISTRIBUTOR:
+            dist = await distributor_service.get_by_telegram_id(user.id)
+            if dist:
+                await _show_dist_self_wallet(
+                    message,
+                    dist,
+                    distributor_wallet_service,
+                    lang,
+                )
+            else:
+                await message.answer(get_text("dist_self_no_account", lang))
+        else:
+            await cmd_balance(message, db, config, api)
+
         return
     if text in (get_text("btn_history", "ar"), get_text("btn_history", "en")):
-        await cmd_history(message, db, config, state)
+        role = await resolve_role(user.id, db, config.ADMIN_IDS)
+
+        if role == ROLE_DISTRIBUTOR:
+            dist = await distributor_service.get_by_telegram_id(user.id)
+            if dist:
+                await _show_dist_self_ledger(
+                    message,
+                    dist["id"],
+                    distributor_wallet_service,
+                    config,
+                    lang,
+                )
+            else:
+                await message.answer(get_text("dist_self_no_account", lang))
+        else:
+            await cmd_history(message, db, config, state)
+
         return
     if text in (get_text("btn_games", "ar"), get_text("btn_games", "en")):
         data = await state.get_data()
@@ -796,7 +827,10 @@ async def menu_callback(
     # When entering an inline section, remove the old Home message.
     # This prevents Home messages from accumulating in the chat.
     if action in ("games", "gift_cards", "balance", "history", "language"):
-        if home_message_id:
+        if home_message_id and (
+            not query.message
+            or home_message_id != query.message.message_id
+        ):
             try:
                 await query.bot.delete_message(
                     chat_id=user.id,
@@ -1304,6 +1338,16 @@ async def distributor_activy_confirm_callback(
         return
     lang = db_user["language"]
 
+    # Distributor must be resolved before the confirmation screen so the
+    # displayed balance comes from the distributor wallet, not the customer wallet.
+    dist = await distributor_service.get_by_telegram_id(user.id)
+    if not dist:
+        await query.message.edit_text(get_text("recharge_failed", lang))
+        await query.answer()
+        return
+
+    dist_id = dist["id"]
+
     operator = callback_data.operator
 
     # Re-fetch live plan data on every tap — same pattern as customer flow.
@@ -1321,7 +1365,7 @@ async def distributor_activy_confirm_callback(
 
     # ── confirmed == 0: show the confirm screen ────────────────────────────
     if callback_data.confirmed == 0:
-        balance = await db.get_balance(user.id)
+        balance = await distributor_wallet_service.get_balance(dist_id) or 0.0
 
         text = get_text("activy_confirm", lang,
                         phone=callback_data.phone,
@@ -1359,13 +1403,6 @@ async def distributor_activy_confirm_callback(
             await query.answer(get_text("activy_duplicate_request", lang), show_alert=True)
             return
 
-    # Look up distributor DB row — needed to pass distributor_id to service.
-    dist = await distributor_service.get_by_telegram_id(user.id)
-    if not dist:
-        await query.message.edit_text(get_text("recharge_failed", lang))
-        await query.answer()
-        return
-
     # Instant tracking card — actual call runs in background via RechargeTracker.
     await query.message.edit_text(get_text("tracking_submitted", lang))
     await query.answer()
@@ -1373,7 +1410,6 @@ async def distributor_activy_confirm_callback(
     chat_id  = query.message.chat.id
     phone    = callback_data.phone
     token    = callback_data.token
-    dist_id  = dist["id"]
 
     async def _do_dist_activy() -> Dict[str, Any]:
         logger.info(
@@ -1387,7 +1423,6 @@ async def distributor_activy_confirm_callback(
             plan_code=callback_data.plan_code,
             plan_name=plan_name,
             amount=plan_amount,
-            is_admin=_is_admin(user.id, config),
         )
         logger.info(
             "Dist activy: process_activy returned — chat_id=%s success=%s reason=%s ref=%s",
@@ -3324,13 +3359,29 @@ async def favorite_action_callback(
     user = query.from_user
     db_user = await _user(db, user.id)
     if not db_user:
-        await query.answer()
+        try:
+            await query.answer()
+        except Exception:
+            pass
         return
+
     lang = db_user["language"]
     fav = await db.get_favorite(callback_data.favorite_id, db_user["id"])
     if not fav:
-        await query.answer(get_text("favorites_not_found", lang), show_alert=True)
+        try:
+            await query.answer(
+                get_text("favorites_not_found", lang),
+                show_alert=True,
+            )
+        except Exception:
+            pass
         return
+
+    # Acknowledge the callback immediately before doing any work.
+    try:
+        await query.answer()
+    except Exception:
+        pass
 
     action = callback_data.action
 
@@ -3371,9 +3422,6 @@ async def favorite_action_callback(
         await db.delete_favorite(fav["id"], db_user["id"])
         await query.message.edit_text(get_text("favorites_deleted", lang, label=fav["label"]))
         await db.log("favorite_deleted", f"favorite_id={fav['id']}", db_user["id"])
-
-    await query.answer()
-
 
 # ---------------------------------------------------------------------------
 # Favorite Numbers FSM helpers
