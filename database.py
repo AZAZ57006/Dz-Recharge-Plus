@@ -1116,6 +1116,7 @@ class Database:
         reference_value: Optional[str] = None,
         idempotency_key: Optional[str] = None,
         notes: Optional[str] = None,
+        operation_type: str = "admin_debit",
     ) -> Dict[str, Any]:
         """Debit (remove funds).  amount must be > 0; raises if balance insufficient."""
         if amount <= 0:
@@ -1123,7 +1124,7 @@ class Database:
         return await self._distributor_wallet_op(
             distributor_id=distributor_id,
             raw_amount=-amount,
-            operation_type="admin_debit",
+            operation_type=operation_type,
             created_by=created_by,
             created_source=created_source,
             reference_type=reference_type,

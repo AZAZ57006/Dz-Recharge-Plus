@@ -1178,7 +1178,13 @@ async def distributor_recharge_confirm_callback(
                         operator=op_label,
                         amount=str(amount),
                         reason=get_text(reason_key, lang))
-        kb = distributor_recharge_failure_keyboard(phone, amount, lang, operator=operator)
+        # Every Retry must receive a fresh idempotency token.
+        # Reusing the previous token would make a legitimate retry look
+        # like a duplicate confirmation.
+        retry_token = secrets.token_hex(8)
+        kb = distributor_recharge_failure_keyboard(
+            phone, amount, lang, operator=operator, token=retry_token
+        )
         return text, kb
 
     async def _run_and_render_dist() -> Dict[str, Any]:

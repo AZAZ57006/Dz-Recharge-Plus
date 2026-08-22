@@ -18,3 +18,8 @@ __pycache__/
 # Local development backups
 backups/
 services.py.before-v2
+
+# Test/database backup files
+*.db.before-*
+*.py.backup_*
+*.py.backup_before_*

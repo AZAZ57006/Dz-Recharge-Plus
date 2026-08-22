@@ -224,6 +224,7 @@ class DistributorWalletService:
         idempotency_key: Optional[str] = None,
         created_source: str = SOURCE_TELEGRAM_ADMIN,
         notes: Optional[str] = None,
+        operation_type: str = OP_ADMIN_DEBIT,
     ) -> Dict[str, Any]:
         """
         Debit (remove funds) from a distributor's wallet.
@@ -239,6 +240,7 @@ class DistributorWalletService:
             reference_value=reference_value,
             idempotency_key=idempotency_key,
             notes=notes,
+            operation_type=operation_type,
         )
         await self._db.log(
             "distributor_wallet_debit",
@@ -412,6 +414,7 @@ class DistributorRechargeService:
                 reference_type="transaction",
                 reference_value=str(tx_id),
                 notes=f"Standard recharge {phone} {amount} DZD",
+                operation_type=OP_RECHARGE_DEBIT,
             )
         except ValueError as exc:
             # Extremely rare: balance changed between pre-flight and debit.
@@ -519,6 +522,7 @@ class DistributorRechargeService:
                 reference_type="transaction",
                 reference_value=str(tx_id),
                 notes=f"Activy {plan_name} {phone} {price} DZD",
+                operation_type=OP_RECHARGE_DEBIT,
             )
         except ValueError as exc:
             logger.critical(
