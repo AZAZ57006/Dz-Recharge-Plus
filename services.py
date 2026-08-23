@@ -502,11 +502,40 @@ class OneClickAPI:
         if not send_resp.success:
             return send_resp
 
-        logger.info("Recharge completion flow: starting status poll — ref=%s", ref)
-        poll_result = await self._poll_topup_status(ref)
+        topup_id = ""
+        if send_resp.raw:
+            topup_id = str(
+                send_resp.raw.get("data", {}).get("topupId", "")
+            )
+
+        if not topup_id:
+            logger.error(
+                "Standard recharge: OneClick did not return topupId — ref=%s",
+                ref,
+            )
+            return APIResponse(
+                success=False,
+                reference=ref,
+                message="OneClick did not return topupId",
+                code="MISSING_TOPUP_ID",
+                raw=send_resp.raw,
+                suggested_offers=[],
+            )
+
         logger.info(
-            "Recharge completion flow: poll finished — ref=%s success=%s code=%s message=%s",
-            ref, poll_result.success, poll_result.code, poll_result.message,
+            "Recharge completion flow: starting status poll — topup_id=%s ref=%s",
+            topup_id,
+            ref,
+        )
+        poll_result = await self._poll_topup_status(topup_id)
+        logger.info(
+            "Recharge completion flow: poll finished — topup_id=%s ref=%s "
+            "success=%s code=%s message=%s",
+            topup_id,
+            ref,
+            poll_result.success,
+            poll_result.code,
+            poll_result.message,
         )
         return poll_result
 
@@ -827,9 +856,10 @@ class RechargeService:
         phone: str,
         amount: int,
         operator: Optional[str] = None,
+        is_admin: bool = False,
     ) -> Dict[str, Any]:
         balance = await self._db.get_balance(telegram_id)
-        if balance < amount:
+        if not is_admin and balance < amount:
             return {"success": False, "reason": "insufficient_balance",
                     "balance": balance, "required": amount}
 
@@ -861,7 +891,8 @@ class RechargeService:
                 "operator=%s ref=%s status=success",
                 tx_id, phone, amount, operator, result.reference,
             )
-            await self._db.adjust_balance(telegram_id, -amount)
+            if not is_admin:
+                await self._db.adjust_balance(telegram_id, -amount)
             await self._db.update_transaction(tx_id, "success", str(result.raw), result.reference)
             await self._db.log(
                 "standard_recharge",

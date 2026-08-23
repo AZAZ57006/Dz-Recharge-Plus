@@ -996,6 +996,7 @@ async def recharge_confirm_callback(
             phone=phone,
             amount=amount,
             operator=operator,
+            is_admin=_is_admin(user.id, config),
         )
         logger.info(
             "Recharge completion flow: process_standard returned — chat_id=%s phone=%s success=%s "

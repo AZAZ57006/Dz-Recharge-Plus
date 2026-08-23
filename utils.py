@@ -189,20 +189,14 @@ TEXTS: dict[str, dict[str, str]] = {
     },
     "recharge_success": {
         "ar": (
-            "✅ <b>تم الشحن بنجاح</b>\n\n"
-            "📞 <code>{phone}</code>\n"
-            "🏢 {operator}\n"
-            "💰 <b>{amount} دج</b>\n"
-            "💳 الرصيد: <b>{balance}</b>\n\n"
-            "شكراً لاستخدامك RechargeDz Pro 🙏"
+            "✅ <b>تم الشحن بنجاح</b>\n"
+            "📞 <code>{phone}</code> | 🏢 {operator}\n"
+            "💰 <b>{amount} دج</b> | 💳 <b>{balance} دج</b>"
         ),
         "en": (
-            "✅ <b>Recharge Successful</b>\n\n"
-            "📞 <code>{phone}</code>\n"
-            "🏢 {operator}\n"
-            "💰 <b>{amount} DZD</b>\n"
-            "💳 Balance: <b>{balance}</b>\n\n"
-            "Thank you for using RechargeDz Pro 🙏"
+            "✅ <b>Recharge Successful</b>\n"
+            "📞 <code>{phone}</code> | 🏢 {operator}\n"
+            "💰 <b>{amount} DZD</b> | 💳 <b>{balance} DZD</b>"
         ),
     },
     "recharge_failed": {
