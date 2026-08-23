@@ -269,13 +269,11 @@ TEXTS: dict[str, dict[str, str]] = {
     },
     "activy_success": {
         "ar": (
-            "✅ <b>{offer}</b>\n"
-            "📞 <code>{phone}</code>\n"
+            "✅ <b>{offer}</b> → <code>{phone}</code>\n"
             "💳 الرصيد: <b>{balance}DA</b>"
         ),
         "en": (
-            "✅ <b>{offer}</b>\n"
-            "📞 <code>{phone}</code>\n"
+            "✅ <b>{offer}</b> → <code>{phone}</code>\n"
             "💳 Balance: <b>{balance}DA</b>"
         ),
     },
