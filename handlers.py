@@ -817,6 +817,14 @@ async def menu_callback(
     user = query.from_user
     lang = await _lang(db, user.id)
 
+    # Answer the callback immediately before any DB/message operations.
+    # This prevents Telegram from expiring the callback query.
+    try:
+        await query.answer()
+    except TelegramBadRequest as exc:
+        if "query is too old" not in str(exc):
+            raise
+
     # Keep the persistent Home message ID before clearing the FSM.
     data = await state.get_data()
     home_message_id = data.get("home_message_id")
@@ -906,8 +914,6 @@ async def menu_callback(
         await query.message.edit_text(get_text("recharge_cancelled", lang))
     elif action == "close":
         await query.message.edit_text(get_text("history_closed", lang))
-
-    await query.answer()
 
 
 # ---------------------------------------------------------------------------
@@ -1755,19 +1761,76 @@ async def game_select_callback(
     query: CallbackQuery,
     callback_data: GameSelectCallback,
     db: Database,
+    games_service: GamesService,
 ) -> None:
     user = query.from_user
+    logger.info(
+        "GAME DEBUG: SELECT callback received — user_id=%s game_id=%s",
+        user.id,
+        callback_data.game_id,
+    )
+
     lang = await _lang(db, user.id)
-    game = GAMES.get(callback_data.game_id)
+    logger.info(
+        "GAME DEBUG: lang resolved — user_id=%s lang=%s",
+        user.id,
+        lang,
+    )
+
+    game = games_service.get_game(callback_data.game_id)
+    logger.info(
+        "GAME DEBUG: get_game returned — game_id=%s found=%s",
+        callback_data.game_id,
+        bool(game),
+    )
     if not game:
         await query.answer()
         return
-    name = game["name_ar"] if lang == "ar" else game["name_en"]
-    await query.message.edit_text(
-        get_text("game_amounts", lang, game=f"{game['emoji']} {name}"),
-        reply_markup=game_packages_keyboard(callback_data.game_id, lang),
-    )
+
     await query.answer()
+
+    logger.info(
+        "GAME DEBUG: calling get_live_packages — game_id=%s",
+        callback_data.game_id,
+    )
+
+    live = await games_service.get_live_packages(callback_data.game_id)
+
+    logger.info(
+        "GAME DEBUG: get_live_packages returned — success=%s packages=%s",
+        live.get("success"),
+        len(live.get("packages", [])),
+    )
+
+    if not live.get("success"):
+        await query.answer()
+        return
+
+    packages = live.get("packages", [])
+    if not packages:
+        await query.answer()
+        return
+
+    name = game["name_ar"] if lang == "ar" else game["name_en"]
+
+    try:
+        await query.message.edit_text(
+            get_text(
+                "game_amounts",
+                lang,
+                game=f"{game['emoji']} {name}",
+            ),
+            reply_markup=game_packages_keyboard(
+                callback_data.game_id,
+                lang,
+                packages,
+            ),
+        )
+    except TelegramBadRequest as exc:
+        # Telegram rejects an edit when text + markup are already identical.
+        # This is harmless for repeated navigation; do not hide other errors.
+        if "message is not modified" not in str(exc):
+            raise
 
 
 @router.callback_query(GameConfirmCallback.filter())
@@ -1779,31 +1842,110 @@ async def game_confirm_callback(
     games_service: GamesService,
 ) -> None:
     user = query.from_user
+    logger.info(
+        "GAME DEBUG: confirm callback received — user_id=%s game_id=%s type_id=%s confirmed=%s token=%s",
+        user.id,
+        callback_data.game_id,
+        callback_data.type_id,
+        callback_data.confirmed,
+        bool(callback_data.token),
+    )
+
     db_user = await _user(db, user.id)
     if not db_user:
+        logger.warning("GAME DEBUG: db_user NOT FOUND — user_id=%s", user.id)
         await query.answer()
         return
+
+    logger.info(
+        "GAME DEBUG: db_user found — user_id=%s db_user_id=%s",
+        user.id,
+        db_user["id"],
+    )
+
     lang = db_user["language"]
     game = GAMES.get(callback_data.game_id)
     if not game:
+        logger.warning(
+            "GAME DEBUG: game NOT FOUND — game_id=%s",
+            callback_data.game_id,
+        )
         await query.answer()
         return
 
-    packages = game["packages"]
-    if not (0 <= callback_data.pkg_index < len(packages)):
+    logger.info(
+        "GAME DEBUG: game found — game_id=%s name=%s",
+        callback_data.game_id,
+        game.get("name_en"),
+    )
+
+    live = await games_service.get_live_packages(callback_data.game_id)
+
+    logger.info(
+        "GAME DEBUG: get_live_packages returned — success=%s packages=%s",
+        live.get("success"),
+        len(live.get("packages", [])),
+    )
+
+    if not live.get("success"):
+        logger.warning(
+            "GAME DEBUG: live packages FAILED — game_id=%s response=%s",
+            callback_data.game_id,
+            live,
+        )
         await query.answer()
         return
-    pkg = packages[callback_data.pkg_index]
+
+    packages = live.get("packages", [])
+
+    pkg = next(
+        (
+            p
+            for p in packages
+            if str(p.get("type_id", "")) == str(callback_data.type_id)
+        ),
+        None,
+    )
+
+    if pkg is None:
+        logger.warning(
+            "GAME DEBUG: package NOT FOUND — game_id=%s type_id=%s available_type_ids=%s",
+            callback_data.game_id,
+            callback_data.type_id,
+            [str(p.get("type_id")) for p in packages],
+        )
+        await query.answer()
+        return
+
+    logger.info(
+        "GAME DEBUG: package found — amount=%s price=%s type_id=%s confirmed=%s",
+        pkg.get("amount"),
+        pkg.get("price"),
+        callback_data.type_id,
+        callback_data.confirmed,
+    )
+
     game_name = game["name_ar"] if lang == "ar" else game["name_en"]
 
     if callback_data.confirmed == 0:
+        logger.info("GAME DEBUG: showing confirmation screen")
+        # Mint a fresh single-use idempotency token for this confirmation
+        # screen. It is echoed back on Confirm/Cancel so duplicate
+        # confirmation callbacks cannot place a second OneClick order.
+        token = secrets.token_hex(8)
+
         await query.message.edit_text(
             get_text("game_confirm", lang,
                      game=f"{game['emoji']} {game_name}",
                      amount=str(pkg["amount"]),
                      currency=game["currency"],
                      price=str(pkg["price"])),
-            reply_markup=game_confirm_keyboard(callback_data.game_id, callback_data.pkg_index, lang),
+            reply_markup=game_confirm_keyboard(
+                callback_data.game_id,
+                callback_data.type_id,
+                token,
+                lang,
+            ),
         )
         await query.answer()
         return
@@ -1813,23 +1955,77 @@ async def game_confirm_callback(
         await query.answer()
         return
 
+    logger.info(
+        "GAME DEBUG: CONFIRM=1 reached — preparing process — user_id=%s game_id=%s type_id=%s",
+        user.id,
+        callback_data.game_id,
+        callback_data.type_id,
+    )
+
+    # Claim the idempotency token before touching the wallet or calling
+    # OneClick. This protects against Telegram retries and user double-taps.
+    token = callback_data.token
+    if token:
+        claimed = await db.claim_idempotency_key(token)
+        if not claimed:
+            await query.answer(
+                get_text("activy_duplicate_request", lang),
+                show_alert=True,
+            )
+            return
+
     await query.message.edit_text(get_text("processing", lang))
+
+    logger.info("GAME DEBUG: calling games_service.process()")
 
     result = await games_service.process(
         telegram_id=user.id,
         db_user_id=db_user["id"],
         game_id=callback_data.game_id,
-        pkg_index=callback_data.pkg_index,
+        type_id=callback_data.type_id,
+        is_admin=_is_admin(user.id, config),
     )
+
+    if token:
+        await db.finish_idempotency_key(
+            token,
+            "success" if result.get("success") else "failed",
+        )
 
     if result["success"]:
         g     = result["game"]
         gname = g["name_ar"] if lang == "ar" else g["name_en"]
-        text  = get_text("game_success", lang,
-                         amount=str(result["amount"]),
-                         currency=g["currency"],
-                         game=gname,
-                         ref=result.get("reference", "-"))
+
+        card = result.get("card") or {}
+        card_code = str(card.get("value") or "").strip()
+
+        if card_code:
+            text = get_text(
+                "game_success",
+                lang,
+                amount=str(result["amount"]),
+                currency=g["currency"],
+                game=gname,
+                code=card_code,
+                ref=result.get("reference", "-"),
+            )
+        else:
+            logger.error(
+                "GAME DEBUG: order fulfilled but no card value returned — "
+                "user_id=%s game_id=%s order_id=%s",
+                user.id,
+                callback_data.game_id,
+                result.get("reference", "-"),
+            )
+            text = get_text(
+                "game_success",
+                lang,
+                amount=str(result["amount"]),
+                currency=g["currency"],
+                game=gname,
+                code="غير متوفر",
+                ref=result.get("reference", "-"),
+            )
     elif result.get("reason") == "insufficient_balance":
         text = get_text("insufficient_balance", lang,
                         balance=format_amount(result["balance"]),

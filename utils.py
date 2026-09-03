@@ -545,13 +545,17 @@ TEXTS: dict[str, dict[str, str]] = {
             "✅ <b>تم الشحن بنجاح</b>\n\n"
             "🕹️ {game}\n"
             "🔢 <b>{amount} {currency}</b>\n"
-            "🔖 <code>{ref}</code>"
+            "💳 <b>كود الشحن:</b>\n"
+            "<code>{code}</code>\n\n"
+            "🔖 رقم الطلب: <code>{ref}</code>"
         ),
         "en": (
             "✅ <b>Top-up Successful</b>\n\n"
             "🕹️ {game}\n"
             "🔢 <b>{amount} {currency}</b>\n"
-            "🔖 <code>{ref}</code>"
+            "💳 <b>Recharge Code:</b>\n"
+            "<code>{code}</code>\n\n"
+            "🔖 Order ID: <code>{ref}</code>"
         ),
     },
 

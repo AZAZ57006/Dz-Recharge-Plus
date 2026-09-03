@@ -68,7 +68,8 @@ class GameSelectCallback(CallbackData, prefix="gsel"):
 
 class GameConfirmCallback(CallbackData, prefix="gcfm"):
     game_id: str
-    pkg_index: int
+    type_id: str
+    token: str | None = None
     confirmed: int = 0
 
 
@@ -783,23 +784,62 @@ def games_menu_keyboard(lang: str) -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
-def game_packages_keyboard(game_id: str, lang: str) -> InlineKeyboardMarkup:
+def game_packages_keyboard(
+    game_id: str,
+    lang: str,
+    packages: List[Dict[str, Any]],
+) -> InlineKeyboardMarkup:
     game = GAMES[game_id]
     b = InlineKeyboardBuilder()
-    for i, pkg in enumerate(game["packages"]):
-        b.row(InlineKeyboardButton(
-            text=f"{pkg['amount']} {game['currency']} — {pkg['price']} دج",
-            callback_data=GameConfirmCallback(game_id=game_id, pkg_index=i, confirmed=0).pack(),
-        ))
-    b.row(_btn(get_text("btn_back", lang), MenuCallback(action="games")))
+
+    for i, pkg in enumerate(packages):
+        b.row(
+            InlineKeyboardButton(
+                text=f"{pkg['amount']} {game['currency']} — {pkg['price']} دج",
+                callback_data=GameConfirmCallback(
+                    game_id=game_id,
+                    type_id=str(pkg["type_id"]),
+                    confirmed=0,
+                ).pack(),
+            )
+        )
+
+    b.row(
+        _btn(
+            get_text("btn_back", lang),
+            MenuCallback(action="games"),
+        )
+    )
+
     return b.as_markup()
 
 
-def game_confirm_keyboard(game_id: str, pkg_index: int, lang: str) -> InlineKeyboardMarkup:
+def game_confirm_keyboard(
+    game_id: str,
+    type_id: str,
+    token: str,
+    lang: str,
+) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     b.row(
-        _btn(get_text("btn_confirm", lang), GameConfirmCallback(game_id=game_id, pkg_index=pkg_index, confirmed=1)),
-        _btn(get_text("btn_cancel",  lang), GameConfirmCallback(game_id=game_id, pkg_index=pkg_index, confirmed=-1)),
+        _btn(
+            get_text("btn_confirm", lang),
+            GameConfirmCallback(
+                game_id=game_id,
+                type_id=type_id,
+                token=token,
+                confirmed=1,
+            ),
+        ),
+        _btn(
+            get_text("btn_cancel", lang),
+            GameConfirmCallback(
+                game_id=game_id,
+                type_id=type_id,
+                token=token,
+                confirmed=-1,
+            ),
+        ),
     )
     return b.as_markup()
 

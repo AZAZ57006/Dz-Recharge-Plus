@@ -53,50 +53,39 @@ _PLANS_CACHE_TTL = 6 * 60 * 60  # seconds (6 hours)
 
 GAMES: Dict[str, Dict[str, Any]] = {
     "pubg": {
-        "name_ar": "ببجي موبايل", "name_en": "PUBG Mobile", "emoji": "🔫",
+        "name_ar": "ببجي موبايل",
+        "name_en": "PUBG Mobile",
+        "emoji": "🔫",
         "currency": "UC",
-        "packages": [
-            {"amount": 60,    "price": 150},
-            {"amount": 120,   "price": 280},
-            {"amount": 325,   "price": 700},
-            {"amount": 660,   "price": 1400},
-            {"amount": 1800,  "price": 3500},
-            {"amount": 3850,  "price": 7000},
-        ],
+        "product_id": "600b141a658904003143cb65",
     },
     "freefire": {
-        "name_ar": "فري فاير", "name_en": "Free Fire", "emoji": "🔥",
+        "name_ar": "فري فاير",
+        "name_en": "Free Fire",
+        "emoji": "🔥",
         "currency": "💎",
-        "packages": [
-            {"amount": 100,   "price": 120},
-            {"amount": 210,   "price": 240},
-            {"amount": 520,   "price": 560},
-            {"amount": 1060,  "price": 1100},
-            {"amount": 2180,  "price": 2200},
-            {"amount": 5600,  "price": 5500},
-        ],
+        "product_id": "600afdf2658904003143c771",
+    },
+    "mobile_legends": {
+        "name_ar": "موبايل ليجندز",
+        "name_en": "Mobile Legends",
+        "emoji": "⚔️",
+        "currency": "💎",
+        "product_id": "60d8380c51bed7424c20bb95",
     },
     "coc": {
-        "name_ar": "كلاش أوف كلانز", "name_en": "Clash of Clans", "emoji": "⚔️",
+        "name_ar": "كلاش أوف كلانز",
+        "name_en": "Clash of Clans",
+        "emoji": "⚔️",
         "currency": "💎",
-        "packages": [
-            {"amount": 80,    "price": 100},
-            {"amount": 500,   "price": 600},
-            {"amount": 1200,  "price": 1400},
-            {"amount": 2500,  "price": 2800},
-            {"amount": 6500,  "price": 7000},
-            {"amount": 14000, "price": 14000},
-        ],
+        "product_id": "",
     },
     "fortnite": {
-        "name_ar": "فورتنايت", "name_en": "Fortnite", "emoji": "🏆",
+        "name_ar": "فورتنايت",
+        "name_en": "Fortnite",
+        "emoji": "🏆",
         "currency": "V-Bucks",
-        "packages": [
-            {"amount": 1000,  "price": 1200},
-            {"amount": 2800,  "price": 3000},
-            {"amount": 5000,  "price": 5200},
-            {"amount": 13500, "price": 13000},
-        ],
+        "product_id": "",
     },
 }
 
@@ -825,6 +814,44 @@ class OneClickAPI:
             }
         return {"success": False, "balance": 0.0, "error_message": resp.message}
 
+    async def get_gift_card_catalog(self) -> APIResponse:
+        """Read the live OneClick gift-card catalog. No purchase."""
+        return await self._get("/gift-cards/catalog")
+
+    async def check_gift_card_product(self, product_id: str) -> APIResponse:
+        """Read live pricing and stock for one gift-card product. No purchase."""
+        return await self._get(f"/gift-cards/checkProduct/{product_id}")
+
+    async def place_gift_card_order(
+        self,
+        product_id: str,
+        type_id: str,
+        quantity: int,
+    ) -> APIResponse:
+        """
+        Place a REAL OneClick gift-card order.
+
+        IMPORTANT: calling this method creates a real provider order.
+        Caller must validate stock, price and wallet balance first.
+        """
+        if quantity < 1:
+            return APIResponse(
+                success=False,
+                reference="",
+                message="quantity must be >= 1",
+                code="INVALID_QUANTITY",
+            )
+
+        return await self._post("/gift-cards/placeOrder", {
+            "productId": product_id,
+            "typeId": type_id,
+            "quantity": quantity,
+        })
+
+    async def check_gift_card_order(self, order_id: str) -> APIResponse:
+        """Read the status of an existing gift-card order."""
+        return await self._get(f"/gift-cards/checkOrder/{order_id}")
+
     async def purchase_gift_card(self, card_type: str, amount: int) -> APIResponse:
         """
         Gift card purchases via the OneClick v3 API require fetching the product
@@ -990,55 +1017,369 @@ class GamesService:
     def get_game(self, game_id: str) -> Optional[Dict[str, Any]]:
         return GAMES.get(game_id)
 
+    async def get_live_packages(
+        self,
+        game_id: str,
+    ) -> Dict[str, Any]:
+        """
+        Read the live OneClick packages for a game.
+
+        No order is placed here. This only reads current type IDs,
+        prices and stock.
+        """
+        game = GAMES.get(game_id)
+        if not game:
+            return {
+                "success": False,
+                "reason": "invalid_game",
+                "packages": [],
+            }
+
+        product_id = game.get("product_id")
+        if not product_id:
+            return {
+                "success": False,
+                "reason": "missing_product_id",
+                "packages": [],
+            }
+
+        try:
+            result = await self._api.check_gift_card_product(product_id)
+        except (NetworkError, APIError) as exc:
+            logger.error(
+                "Game package lookup API error — game=%s product_id=%s error=%s",
+                game_id,
+                product_id,
+                exc,
+            )
+            return {
+                "success": False,
+                "reason": "api_error",
+                "packages": [],
+            }
+
+        if not result.success or not result.raw:
+            logger.warning(
+                "Game package lookup failed — game=%s product_id=%s code=%s message=%s",
+                game_id,
+                product_id,
+                result.code,
+                result.message,
+            )
+            return {
+                "success": False,
+                "reason": "provider_error",
+                "message": result.message,
+                "packages": [],
+            }
+
+        data = result.raw.get("data", {})
+        types = data.get("types", [])
+
+        packages: List[Dict[str, Any]] = []
+
+        for item in types:
+            type_id = str(item.get("id", ""))
+            name = str(item.get("name", "")).strip()
+
+            try:
+                price = float(item.get("price", 0))
+                quantity = int(item.get("quantity", 0))
+            except (TypeError, ValueError):
+                continue
+
+            # Never show invalid, free/zero-price or out-of-stock packages.
+            if not type_id or not name or price <= 0 or quantity <= 0:
+                continue
+
+            packages.append({
+                "type_id": type_id,
+                "amount": name,
+                "price": price,
+                "quantity": quantity,
+            })
+
+        return {
+            "success": True,
+            "game": game,
+            "product_id": product_id,
+            "product_title": data.get(
+                "productTitle",
+                game["name_en"],
+            ),
+            "packages": packages,
+        }
+
     async def process(
         self,
         telegram_id: int,
         db_user_id: int,
         game_id: str,
-        pkg_index: int,
+        type_id: str,
         player_id: str = "",
+        is_admin: bool = False,
     ) -> Dict[str, Any]:
+        """
+        Place a real OneClick digital-product order for a game.
+
+        Flow:
+          checkProduct -> validate package -> balance check
+          -> placeOrder -> checkOrder polling -> persist success/failure.
+
+        `player_id` is kept for callback compatibility. The current OneClick
+        gift-card products are fulfilled as digital products and do not use it.
+        """
         game = GAMES.get(game_id)
         if not game:
             return {"success": False, "reason": "invalid_game"}
-        packages = game["packages"]
-        if pkg_index < 0 or pkg_index >= len(packages):
+
+        # Re-read the live catalogue at confirmation time so the selected
+        # package is validated against the current provider price and stock.
+        live = await self.get_live_packages(game_id)
+        if not live.get("success"):
+            return {
+                "success": False,
+                "reason": live.get("reason", "provider_error"),
+                "message": live.get("message", ""),
+            }
+
+        packages = live.get("packages", [])
+
+        selected_type_id = str(type_id or "").strip()
+        if not selected_type_id:
             return {"success": False, "reason": "invalid_package"}
 
-        pkg = packages[pkg_index]
-        price, amount = float(pkg["price"]), pkg["amount"]
+        pkg = next(
+            (
+                p
+                for p in packages
+                if str(p.get("type_id", "")).strip() == selected_type_id
+            ),
+            None,
+        )
+
+        if pkg is None:
+            return {"success": False, "reason": "invalid_package"}
+
+        product_id = str(live.get("product_id") or game.get("product_id") or "")
+        type_id = str(pkg.get("type_id") or "")
+        price = float(pkg.get("price", 0))
+        amount = str(pkg.get("amount", ""))
+        quantity = int(pkg.get("quantity", 0))
+
+        if not product_id or not type_id:
+            return {"success": False, "reason": "invalid_product"}
+
+        if price <= 0:
+            return {"success": False, "reason": "invalid_price"}
+
+        if quantity <= 0:
+            return {"success": False, "reason": "out_of_stock"}
 
         balance = await self._db.get_balance(telegram_id)
-        if balance < price:
-            return {"success": False, "reason": "insufficient_balance",
-                    "balance": balance, "required": price}
+        if not is_admin and balance < price:
+            return {
+                "success": False,
+                "reason": "insufficient_balance",
+                "balance": balance,
+                "required": price,
+            }
 
         tx_id = await self._db.create_transaction(
-            user_id=db_user_id, tx_type="game", amount=price,
-            description=f"{game['name_en']} {amount} {game['currency']}",
-            status="pending",
+            user_id=db_user_id,
+            tx_type="game",
+            amount=price,
+            description=f"{game['name_en']} {amount}",
+            status="processing",
         )
 
         try:
-            result = await self._api.recharge_game(game_id, amount, player_id)
+            order_result = await self._api.place_gift_card_order(
+                product_id=product_id,
+                type_id=type_id,
+                quantity=1,
+            )
         except (NetworkError, APIError) as exc:
-            logger.error("Game recharge API error: %s", exc)
+            logger.error(
+                "Game order API error — game=%s product_id=%s type_id=%s error=%s",
+                game_id,
+                product_id,
+                type_id,
+                exc,
+            )
             await self._db.update_transaction(tx_id, "failed", str(exc))
             return {"success": False, "reason": "api_error"}
 
-        if result.success:
-            await self._db.adjust_balance(telegram_id, -price)
-            await self._db.update_transaction(tx_id, "success", str(result.raw), result.reference)
-            await self._db.log(
-                "game_recharge",
-                f"game={game_id} amount={amount} ref={result.reference}",
-                db_user_id,
+        if not order_result.success:
+            logger.warning(
+                "Game order rejected — game=%s product_id=%s type_id=%s "
+                "code=%s message=%s",
+                game_id,
+                product_id,
+                type_id,
+                order_result.code,
+                order_result.message,
             )
-            return {"success": True, "game": game, "amount": amount,
-                    "price": price, "reference": result.reference}
-        else:
-            await self._db.update_transaction(tx_id, "failed", str(result.raw))
-            return {"success": False, "reason": "provider_error"}
+            await self._db.update_transaction(
+                tx_id,
+                "failed",
+                str(order_result.raw),
+            )
+            return {
+                "success": False,
+                "reason": "provider_error",
+                "message": order_result.message,
+            }
+
+        order_id = str(order_result.reference or "")
+
+        if not order_id and order_result.raw:
+            order_id = str(
+                order_result.raw.get("data", {}).get("orderId", "")
+            )
+
+        if not order_id:
+            logger.error(
+                "Game order created without orderId — game=%s product_id=%s "
+                "type_id=%s",
+                game_id,
+                product_id,
+                type_id,
+            )
+            await self._db.update_transaction(
+                tx_id,
+                "failed",
+                "Missing orderId from OneClick",
+            )
+            return {
+                "success": False,
+                "reason": "missing_order_id",
+            }
+
+        logger.info(
+            "Game order created — tx_id=%s game=%s order_id=%s "
+            "product_id=%s type_id=%s price=%s",
+            tx_id,
+            game_id,
+            order_id,
+            product_id,
+            type_id,
+            price,
+        )
+
+        # Poll the provider order until it reaches a terminal state.
+        final_result = None
+
+        for attempt in range(15):
+            try:
+                check = await self._api.check_gift_card_order(order_id)
+            except (NetworkError, APIError) as exc:
+                logger.error(
+                    "Game order status API error — order_id=%s attempt=%s error=%s",
+                    order_id,
+                    attempt + 1,
+                    exc,
+                )
+                await asyncio.sleep(2)
+                continue
+
+            raw_data = (check.raw or {}).get("data", {}) if check.raw else {}
+            status = str(
+                raw_data.get("status")
+                or raw_data.get("orderStatus")
+                or ""
+            ).upper()
+
+            logger.info(
+                "Game order status — tx_id=%s order_id=%s attempt=%s "
+                "status=%s success=%s",
+                tx_id,
+                order_id,
+                attempt + 1,
+                status,
+                check.success,
+            )
+
+            if status in {"FULFILLED", "PARTIALLY_FILLED", "REFUNDED"}:
+                final_result = check
+                break
+
+            if not check.success:
+                final_result = check
+                break
+
+            await asyncio.sleep(2)
+
+        if final_result is None:
+            await self._db.update_transaction(
+                tx_id,
+                "failed",
+                f"Order status timeout: {order_id}",
+            )
+            return {
+                "success": False,
+                "reason": "order_timeout",
+                "order_id": order_id,
+            }
+
+        final_data = (
+            (final_result.raw or {}).get("data", {})
+            if final_result.raw
+            else {}
+        )
+
+        final_status = str(
+            final_data.get("status")
+            or final_data.get("orderStatus")
+            or ""
+        ).upper()
+
+        if final_status != "FULFILLED":
+            await self._db.update_transaction(
+                tx_id,
+                "failed",
+                str(final_result.raw),
+                order_id,
+            )
+            return {
+                "success": False,
+                "reason": "order_failed",
+                "order_id": order_id,
+                "status": final_status,
+                "message": final_result.message,
+            }
+
+        # Provider order is fulfilled. Only now debit a normal user's balance.
+        # Admin purchases are charged against the OneClick provider balance.
+        if not is_admin:
+            await self._db.adjust_balance(telegram_id, -price)
+
+        await self._db.update_transaction(
+            tx_id,
+            "success",
+            str(final_result.raw),
+            order_id,
+        )
+
+        await self._db.log(
+            "game_recharge",
+            f"game={game_id} amount={amount} price={price} "
+            f"product_id={product_id} type_id={type_id} order_id={order_id}",
+            db_user_id,
+        )
+
+        cards = final_data.get("cards", [])
+        card = cards[0] if isinstance(cards, list) and cards else {}
+
+        return {
+            "success": True,
+            "game": game,
+            "amount": amount,
+            "price": price,
+            "reference": order_id,
+            "order_id": order_id,
+            "card": card,
+        }
 
 
 # ---------------------------------------------------------------------------
